@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model audit_logs {
+  id                                    String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id                             String   @db.Uuid
+  user_id                               String   @db.Uuid
+  authorized_by                         String?  @db.Uuid
+  entity_type                           String   @db.VarChar(50)
+  entity_id                             String   @db.Uuid
+  action                                String   @db.VarChar(50)
+  details                               Json?
+  created_at                            DateTime @default(now()) @db.Timestamptz(6)
+  users_audit_logs_authorized_byTousers users?   @relation("audit_logs_authorized_byTousers", fields: [authorized_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants                               tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_audit_logs_user_idTousers       users    @relation("audit_logs_user_idTousers", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenant_id, created_at], map: "idx_audit_logs_tenant_date")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cash_movements {
+  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id     String        @db.Uuid
+  session_id    String        @db.Uuid
+  user_id       String        @db.Uuid
+  type          String        @db.VarChar(20)
+  amount        Decimal       @db.Decimal(12, 2)
+  reason        String        @db.VarChar(255)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  cash_sessions cash_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants       tenants       @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users         @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([session_id], map: "idx_cash_movements_session")
+}
+
+model cash_session_closings {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id         String          @db.Uuid
+  session_id        String          @db.Uuid
+  payment_method_id String          @db.Uuid
+  declared_amount   Decimal         @db.Decimal(12, 2)
+  calculated_amount Decimal         @db.Decimal(12, 2)
+  difference_amount Decimal         @db.Decimal(12, 2)
+  created_at        DateTime        @default(now()) @db.Timestamptz(6)
+  payment_methods   payment_methods @relation(fields: [payment_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cash_sessions     cash_sessions   @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants           tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id], map: "idx_session_closings_session")
+}
+
+model cash_session_operators {
+  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id     String        @db.Uuid
+  session_id    String        @db.Uuid
+  user_id       String        @db.Uuid
+  started_at    DateTime      @default(now()) @db.Timestamptz(6)
+  ended_at      DateTime?     @db.Timestamptz(6)
+  cash_sessions cash_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants       tenants       @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users         @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([session_id, user_id], map: "idx_session_operators")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cash_sessions {
+  id                         String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id                  String                   @db.Uuid
+  terminal_id                String                   @db.Uuid
+  opened_by                  String                   @db.Uuid
+  opened_at                  DateTime                 @default(now()) @db.Timestamptz(6)
+  closed_at                  DateTime?                @db.Timestamptz(6)
+  opening_balance            Decimal                  @default(0.00) @db.Decimal(12, 2)
+  closing_balance_declared   Decimal?                 @db.Decimal(12, 2)
+  closing_balance_calculated Decimal?                 @db.Decimal(12, 2)
+  status                     String                   @default("OPEN") @db.VarChar(20)
+  notes                      String?
+  cash_movements             cash_movements[]
+  cash_session_closings      cash_session_closings[]
+  cash_session_operators     cash_session_operators[]
+  users                      users                    @relation(fields: [opened_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants                    tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pos_terminals              pos_terminals            @relation(fields: [terminal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sales                      sales[]
+
+  @@index([tenant_id, status], map: "idx_cash_sessions_tenant_status")
+}
+
+model categories {
+  id         String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id  String     @db.Uuid
+  name       String     @db.VarChar(100)
+  is_active  Boolean    @default(true)
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  tenants    tenants    @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products   products[]
+
+  @@index([tenant_id], map: "idx_categories_tenant")
+}
+
+model customers {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id       String   @db.Uuid
+  name            String   @db.VarChar(255)
+  document        String?  @db.VarChar(20)
+  phone           String?  @db.VarChar(30)
+  email           String?  @db.VarChar(255)
+  credit_limit    Decimal  @default(0.00) @db.Decimal(12, 2)
+  current_balance Decimal  @default(0.00) @db.Decimal(12, 2)
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  tenants         tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sales           sales[]
+
+  @@index([tenant_id], map: "idx_customers_tenant")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payment_methods {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id             String                  @db.Uuid
+  name                  String                  @db.VarChar(50)
+  type                  String                  @db.VarChar(30)
+  is_active             Boolean                 @default(true)
+  cash_session_closings cash_session_closings[]
+  tenants               tenants                 @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sale_payments         sale_payments[]
+
+  @@index([tenant_id], map: "idx_payment_methods_tenant")
+}
+
+model pos_terminals {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id     String          @db.Uuid
+  identifier    String          @db.VarChar(50)
+  is_active     Boolean         @default(true)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  cash_sessions cash_sessions[]
+  tenants       tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenant_id], map: "idx_terminals_tenant")
+}
+
+model products {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id       String            @db.Uuid
+  category_id     String?           @db.Uuid
+  barcode         String?           @db.VarChar(64)
+  sku             String?           @db.VarChar(64)
+  name            String            @db.VarChar(255)
+  description     String?
+  cost_price      Decimal           @default(0.00) @db.Decimal(12, 2)
+  sale_price      Decimal           @db.Decimal(12, 2)
+  unit_type       String            @default("UN") @db.VarChar(10)
+  manage_stock    Boolean           @default(true)
+  current_stock   Decimal           @default(0.000) @db.Decimal(12, 3)
+  min_stock       Decimal           @default(0.000) @db.Decimal(12, 3)
+  is_active       Boolean           @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  categories      categories?       @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sale_items      sale_items[]
+  stock_movements stock_movements[]
+
+  @@index([tenant_id, barcode], map: "idx_products_tenant_barcode")
+  @@index([tenant_id, name], map: "idx_products_tenant_name")
+}
+
+model sale_items {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id       String   @db.Uuid
+  sale_id         String   @db.Uuid
+  product_id      String   @db.Uuid
+  quantity        Decimal  @db.Decimal(12, 3)
+  unit_price      Decimal  @db.Decimal(12, 2)
+  cost_price      Decimal  @db.Decimal(12, 2)
+  discount_amount Decimal  @default(0.00) @db.Decimal(12, 2)
+  total_price     Decimal  @db.Decimal(12, 2)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  products        products @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sales           sales    @relation(fields: [sale_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants         tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sale_id], map: "idx_sale_items_sale")
+}
+
+model sale_payments {
+  id                    String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id             String          @db.Uuid
+  sale_id               String          @db.Uuid
+  payment_method_id     String          @db.Uuid
+  amount                Decimal         @db.Decimal(12, 2)
+  tendered_amount       Decimal?        @db.Decimal(12, 2)
+  change_amount         Decimal         @default(0.00) @db.Decimal(12, 2)
+  transaction_reference String?         @db.VarChar(100)
+  created_at            DateTime        @default(now()) @db.Timestamptz(6)
+  payment_methods       payment_methods @relation(fields: [payment_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sales                 sales           @relation(fields: [sale_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenants               tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sale_id], map: "idx_sale_payments_sale")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sales {
+  id                             String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id                      String            @db.Uuid
+  session_id                     String            @db.Uuid
+  user_id                        String            @db.Uuid
+  customer_id                    String?           @db.Uuid
+  code                           BigInt            @default(autoincrement())
+  subtotal                       Decimal           @default(0.00) @db.Decimal(12, 2)
+  discount_amount                Decimal           @default(0.00) @db.Decimal(12, 2)
+  total_amount                   Decimal           @default(0.00) @db.Decimal(12, 2)
+  status                         String            @default("COMPLETED") @db.VarChar(20)
+  canceled_at                    DateTime?         @db.Timestamptz(6)
+  canceled_by                    String?           @db.Uuid
+  cancel_reason                  String?
+  created_at                     DateTime          @default(now()) @db.Timestamptz(6)
+  sale_items                     sale_items[]
+  sale_payments                  sale_payments[]
+  users_sales_canceled_byTousers users?            @relation("sales_canceled_byTousers", fields: [canceled_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customers                      customers?        @relation(fields: [customer_id], references: [id], onUpdate: NoAction)
+  cash_sessions                  cash_sessions     @relation(fields: [session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants                        tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_sales_user_idTousers     users             @relation("sales_user_idTousers", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stock_movements                stock_movements[]
+
+  @@index([tenant_id, created_at], map: "idx_sales_tenant_date")
+  @@index([tenant_id, session_id], map: "idx_sales_tenant_session")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_movements {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id    String   @db.Uuid
+  product_id   String   @db.Uuid
+  user_id      String   @db.Uuid
+  sale_id      String?  @db.Uuid
+  type         String   @db.VarChar(30)
+  quantity     Decimal  @db.Decimal(12, 3)
+  stock_before Decimal  @db.Decimal(12, 3)
+  stock_after  Decimal  @db.Decimal(12, 3)
+  reason       String?  @db.VarChar(255)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  products     products @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sales        sales?   @relation(fields: [sale_id], references: [id], onUpdate: NoAction)
+  tenants      tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([product_id], map: "idx_stock_movements_product")
+}
+
+model tenants {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @db.VarChar(255)
+  trade_name             String?                  @db.VarChar(255)
+  document               String                   @unique @db.VarChar(20)
+  is_active              Boolean                  @default(true)
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  audit_logs             audit_logs[]
+  cash_movements         cash_movements[]
+  cash_session_closings  cash_session_closings[]
+  cash_session_operators cash_session_operators[]
+  cash_sessions          cash_sessions[]
+  categories             categories[]
+  customers              customers[]
+  payment_methods        payment_methods[]
+  pos_terminals          pos_terminals[]
+  products               products[]
+  sale_items             sale_items[]
+  sale_payments          sale_payments[]
+  sales                  sales[]
+  stock_movements        stock_movements[]
+  users                  users[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                         String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenant_id                                  String                   @db.Uuid
+  name                                       String                   @db.VarChar(255)
+  email                                      String                   @db.VarChar(255)
+  password_hash                              String                   @db.VarChar(255)
+  role                                       String                   @db.VarChar(50)
+  is_active                                  Boolean                  @default(true)
+  created_at                                 DateTime                 @default(now()) @db.Timestamptz(6)
+  audit_logs_audit_logs_authorized_byTousers audit_logs[]             @relation("audit_logs_authorized_byTousers")
+  audit_logs_audit_logs_user_idTousers       audit_logs[]             @relation("audit_logs_user_idTousers")
+  cash_movements                             cash_movements[]
+  cash_session_operators                     cash_session_operators[]
+  cash_sessions                              cash_sessions[]
+  sales_sales_canceled_byTousers             sales[]                  @relation("sales_canceled_byTousers")
+  sales_sales_user_idTousers                 sales[]                  @relation("sales_user_idTousers")
+  stock_movements                            stock_movements[]
+  tenants                                    tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenant_id, email], map: "uq_users_tenant_email")
+  @@index([tenant_id], map: "idx_users_tenant")
+}
